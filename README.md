@@ -46,7 +46,8 @@ views:
 | filter                       | string/list | **Optional** |          | Only show items that contains this filter in the name. When filter is a list, filters are applied as OR.                                                                                                                             |
 | remove_filter                | bool        | **Optional** |          | Use together with `filter` to remove the filter from the name when showing in card. Chore name "Yard work: Clean rain gutters" with filter "Yard work: " will then only display "Clean rain gutters".                                |
 | filter_user                  | number      | **Optional** |          | Only show items assigned to the user with this user_id. Ex: `1`. If a user_id map is defined, `current` may be used instead of a number, in which case only items assigned to the current home-assistant user are shown.                                                                                                                                                                      |
-| show_unassigned              | bool        | **Optional** | `false`  | Show chores or tasks that have no assignee. If `filter_user` is enabled, this will show the user-filtered chores and tasks, and if `show_unassigned` is true, also show unassigned tasks. If `filter_user` is not set but `show_unassigned` is true, only unassigned items will be shown. |
+| show_unassigned              | bool        | **Optional** | `false`  | Show chores or tasks that have no assignee. If `filter_user` is enabled, this will show the user-filtered chores and tasks, and if `show_unassigned` is true, also show unassigned tasks. If `filter_user` is not set but `show_unassigned` is true, show all items (default). If `show_unassigned` is false and `filter_user` is not set, hide unassigned items. |
+| input_boolean_entity         | string      | **Optional** |          | Entity ID of an `input_boolean` to update based on whether there are visible todos. The card will call `turn_on` when there are todos and `turn_off` when there are none. Example: `input_boolean.has_chores`. This can be used with conditional cards to show/hide the card. |
 | filter_task_category         | number/list | **Optional** |          | Only show tasks with select category_ids. When filter is a list, filters are applied as OR. Ex: `1` |
 | show_assigned                | bool        | **Optional** | `true`   | Show who's assigned to the item (does not work on tasks).                                                                                                                                                                            |
 | show_last_tracked            | bool        | **Optional** | `true`   | Show when someone last tracked this chore (does not work on tasks).                                                                                                                                                                  |
@@ -205,6 +206,41 @@ In general, this update aims to not change any default setups so that anyone usi
 4. Other task lines will now always use the following CSS variables:
     - `--paper_font_body1_-_font_size` for the size.
     - `--secondary-text-color` for the color.
+
+## Using input_boolean for Conditional Cards
+
+The card can automatically update an `input_boolean` entity to reflect whether there are visible todos. This allows you to use conditional cards to show/hide the card based on whether there are items.
+
+### Setup
+
+1. Create an `input_boolean` in your `configuration.yaml`:
+   ```yaml
+   input_boolean:
+     has_chores:
+       name: Has Chores
+       icon: mdi:check-circle
+   ```
+
+2. Add `input_boolean_entity` to your card configuration:
+   ```yaml
+   type: custom:grocy-chores-card
+   entity: sensor.grocy_chores
+   input_boolean_entity: input_boolean.has_chores
+   ```
+
+3. Wrap your card in a conditional card:
+   ```yaml
+   type: conditional
+   conditions:
+     - entity: input_boolean.has_chores
+       state: 'on'
+   card:
+     type: custom:grocy-chores-card
+     entity: sensor.grocy_chores
+     input_boolean_entity: input_boolean.has_chores
+   ```
+
+The card will automatically call `input_boolean.turn_on` when there are visible todos and `input_boolean.turn_off` when there are none. The service is only called when the state changes to avoid unnecessary calls.
 
 ## Known Issues
 1. Due/Completed dates with the time values 23:59:59 or 00:00:00 will not show the times. This is because those are the default values populated when no time is set.

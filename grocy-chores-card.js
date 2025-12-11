@@ -75,6 +75,7 @@ class GrocyChoresCard extends LitElement {
         this._configSetup();
 
         if (!Array.isArray(this.entities)) {
+            this._updateHasTodos(false);
             this.requestUpdate();
             return;
         }
@@ -102,6 +103,7 @@ class GrocyChoresCard extends LitElement {
         }
 
         if (allItems.length === 0) {
+            this._updateHasTodos(false);
             this.requestUpdate();
             return;
         }
@@ -175,6 +177,10 @@ class GrocyChoresCard extends LitElement {
             this.items = allItems;
         }
 
+        // Update has_todos property based on visible items
+        const newHasTodos = (this.items && this.items.length > 0) || (this.overflow && this.overflow.length > 0);
+        this._updateHasTodos(newHasTodos);
+
         this.requestUpdate();
     }
 
@@ -205,6 +211,7 @@ class GrocyChoresCard extends LitElement {
             throw new Error('Please define entity');
         }
         this.config = config;
+        this._cardInitialized = true;
         this._processItems();
         if(this.config.show_create_task) {
             this.loadCustomCreateTaskElements();
@@ -214,9 +221,11 @@ class GrocyChoresCard extends LitElement {
 
     render() {
         if (!this.entities) {
+            this._updateHasTodos(false);
             return this._renderEntityNotFound();
         }
         for (let i = 0; i < this.entities_not_found.length; i++) {
+            this._updateHasTodos(false);
             return this._renderEntityNotFound(this.entities_not_found[i]);
         }
 
@@ -224,11 +233,16 @@ class GrocyChoresCard extends LitElement {
             this.items = [];
             this.overflow = [];
             this.itemsNotVisible = 0;
+            this._updateHasTodos(false);
         }
 
         if (this.items.length < 1 && !this.show_empty) {
+            this._updateHasTodos(false);
             return;
         }
+
+        // Mark that we've rendered at least once
+        this._hasRendered = true;
 
         return html`
             ${html`
@@ -618,6 +632,61 @@ class GrocyChoresCard extends LitElement {
         return item.assigned_to_name == null;
     }
 
+    _updateHasTodos(hasTodos) {
+        // Only update if the state changed to avoid unnecessary service calls
+        if (this.has_todos !== hasTodos) {
+            this.has_todos = hasTodos;
+            this.setAttribute('has-todos', this.has_todos.toString());
+            
+            // Update input_boolean entity if configured (optional feature)
+            // Only update if card is fully initialized, has rendered at least once, 
+            // hass is available, and input_boolean_entity is set
+            if (this._cardInitialized &&
+                this._hasRendered &&
+                this.input_boolean_entity && 
+                this.config && 
+                this._hass && 
+                typeof this._hass.callService === 'function') {
+                
+                // Store references to avoid issues with 'this' context
+                const hass = this._hass;
+                const entityId = this.input_boolean_entity;
+                const hasTodos = this.has_todos;
+                
+                // Use setTimeout to ensure the service call happens after the card is fully rendered
+                // Only call after card has rendered to avoid interfering with initialization
+                setTimeout(() => {
+                    try {
+                        // Double-check everything is still available after the timeout
+                        if (this._cardInitialized &&
+                            this._hasRendered &&
+                            this.config && 
+                            hass && 
+                            typeof hass.callService === 'function' && 
+                            entityId) {
+                            const service = hasTodos ? 'turn_on' : 'turn_off';
+                            const parts = entityId.split('.');
+                            
+                            // Validate entity ID format: domain.entity_id and must be input_boolean
+                            if (parts.length === 2 && parts[0] === 'input_boolean' && parts[1]) {
+                                const domain = parts[0];
+                                
+                                // Call service with explicit context
+                                hass.callService(domain, service, {
+                                    entity_id: entityId
+                                }).catch(() => {
+                                    // Silently fail - this is an optional feature
+                                });
+                            }
+                        }
+                    } catch (err) {
+                        // Silently fail - this is an optional feature
+                    }
+                }, 500);
+            }
+        }
+    }
+
     _checkMatchTaskCategoryFilter(item) {
         let filter = [].concat(this.filter_task_category);
         return filter.some(id => item.category_id === id);
@@ -955,6 +1024,7 @@ class GrocyChoresCard extends LitElement {
         this.fixed_tiling_size = this.config.fixed_tiling_size ?? null;
         this.use_icons = this.config.use_icons ?? false;
         this.show_unassigned = this.config.show_unassigned ?? false;
+        this.input_boolean_entity = this.config.input_boolean_entity ?? null;
         if (this.use_icons) {
             this.task_icon = this.config.task_icon || 'mdi:checkbox-blank-outline';
             this.chore_icon = this.config.chore_icon || 'mdi:check-circle-outline';
@@ -967,7 +1037,12 @@ class GrocyChoresCard extends LitElement {
 
     constructor() {
         super();
-        this.local_cached_hidden_items = []
+        this.local_cached_hidden_items = [];
+        this.has_todos = false;
+        this.input_boolean_entity = null;
+        this._cardInitialized = false;
+        this._hasRendered = false;
+        this.setAttribute('has-todos', 'false');
     }
 
     getCardSize() {
